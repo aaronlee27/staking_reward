@@ -15,7 +15,7 @@ contract testStakingUnit is Test {
     uint256 public constant START_REWARD_BLOCK = 7;
     uint256 public constant REWARD_PER_BLOCK = 40 ether;
     uint256 public constant ERROR_PRECISION = 1e9; // 10^-9
-    uint256 public constant INITIAL_AMOUNT = 100 ether;
+    uint256 public constant INITIAL_AMOUNT = 100000 ether;
 
     address public alice = makeAddr("alice");
     address public bob = makeAddr("bob");
@@ -45,6 +45,11 @@ contract testStakingUnit is Test {
 
         vm.stopPrank();
     }
+
+    function isEqual(uint x, uint y) public pure returns (bool){
+        return abs(int(x) - int(y)) < ERROR_PRECISION;
+    }
+
     function abs(int x) public pure returns (uint256) {
         if (x < 0){
             return uint256(-x);
@@ -53,9 +58,8 @@ contract testStakingUnit is Test {
         }
     }
 
-    function testDeposit() external {
-        uint256 _blockToStake = START_REWARD_BLOCK + 10;
-        uint256 _amountToStake = 50 ether;
+    function testDeposit(uint256 _amountToStake, uint256 _blockToStake) external {
+        _amountToStake = bound(_amountToStake, 1, INITIAL_AMOUNT);
         stake(alice, _amountToStake, _blockToStake);
         // What to check???
         // Check if the staker has the correct amount of staking token
@@ -68,33 +72,13 @@ contract testStakingUnit is Test {
         assert(staking.getStakerInfo(alice).amount == _amountToStake);
     }
 
-    function testCantDepositWithZero() external {
-        uint256 _blockToStake = START_REWARD_BLOCK + 10;
-        uint256 _amountToStake = 0 ether;
 
-        vm.roll(_blockToStake);
-        vm.startPrank(alice);
-        
-        stakingToken.approve(address(staking), _amountToStake);
-
-        vm.expectRevert(abi.encodeWithSelector(
-            Staking.StakingMustBeGreaterThanZero.selector,
-            alice
-        ));
-        staking.deposit(_amountToStake);
-
-        vm.stopPrank();
-        
-
-        vm.stopPrank();
-    }
-
-    function testDepositBeforeRewardAndGetReward() external {
-        uint256 _blockToStake = START_REWARD_BLOCK - 1;
-        uint256 _amountToStake = 50 ether;
+    function testDepositBeforeRewardAndGetReward(uint256 _blockToStake, uint256 _amountToStake, uint256 _blockToUnstake) external {
+        _blockToStake = bound(_blockToStake, 1, START_REWARD_BLOCK - 1);
+        _amountToStake = bound(_amountToStake, 1, INITIAL_AMOUNT);
         stake(alice, _amountToStake, _blockToStake);
 
-        uint256 _blockToUnstake = START_REWARD_BLOCK + 3;
+        _blockToUnstake = bound(_blockToUnstake, START_REWARD_BLOCK, START_REWARD_BLOCK + 1000);
         uint256 _expectedReward = (_blockToUnstake - START_REWARD_BLOCK) * REWARD_PER_BLOCK;
         vm.roll(_blockToUnstake);
 
@@ -107,16 +91,16 @@ contract testStakingUnit is Test {
         console.log("Expected reward: ", _expectedReward);
         console.log("Alice's reward:  ", rewardToken.balanceOf(alice));
 
-        assert(rewardToken.balanceOf(alice) == _expectedReward);
+        assert(isEqual(rewardToken.balanceOf(alice), _expectedReward));
     }
 
-    function testDepositAfterRewardAndGetReward() external {
-        uint256 _blockToStake = START_REWARD_BLOCK + 3;
-        uint256 _amountToStake = 50 ether;
+    function testDepositAfterRewardAndGetReward(uint256 _blockToStake, uint256 _amountToStake, uint256 _blockToUnstake) external {
+        _blockToStake = bound(_blockToStake, START_REWARD_BLOCK, START_REWARD_BLOCK + 1000);
+        _amountToStake = bound(_amountToStake, 1, INITIAL_AMOUNT);
 
         stake(alice, _amountToStake, _blockToStake);
 
-        uint256 _blockToUnstake = 15;
+        _blockToUnstake = bound(_blockToUnstake, _blockToStake + 1, START_REWARD_BLOCK + 2000);
         uint256 _expectedReward = (_blockToUnstake - _blockToStake) * REWARD_PER_BLOCK;
         vm.roll(_blockToUnstake);
 
@@ -129,17 +113,18 @@ contract testStakingUnit is Test {
         console.log("Expected reward: ", _expectedReward);
         console.log("Alice's reward:  ", rewardToken.balanceOf(alice));
 
-        assert(rewardToken.balanceOf(alice) == _expectedReward);
+        assert(isEqual(rewardToken.balanceOf(alice), _expectedReward));
     
     }
 
-    function testDepositBeforeRewardAndGetRewardBeforeStartBlockReward() public {
-        uint256 _blockToStake = START_REWARD_BLOCK - 6;
-        uint256 _amountToStake = 50 ether;
+
+    function testDepositBeforeRewardAndGetRewardBeforeStartBlockReward(uint256 _blockToStake, uint256 _amountToStake, uint256 _blockToUnstake) public {
+        _blockToStake = bound(_blockToStake, 1, START_REWARD_BLOCK - 2);
+        _amountToStake = bound(_amountToStake, 1, INITIAL_AMOUNT);
 
         stake(alice, _amountToStake, _blockToStake);
 
-        uint256 _blockToUnstake = START_REWARD_BLOCK - 3;
+        _blockToUnstake = bound(_blockToUnstake, _blockToStake + 1, START_REWARD_BLOCK - 1);
         uint256 _expectedReward = 0;
         vm.roll(_blockToUnstake);
 
@@ -152,22 +137,29 @@ contract testStakingUnit is Test {
         console.log("Expected reward: ", _expectedReward);
         console.log("Alice's reward:  ", rewardToken.balanceOf(alice));
 
-        assert(rewardToken.balanceOf(alice) == _expectedReward);
+        assert(isEqual(rewardToken.balanceOf(alice), _expectedReward));
     }
 
-    function testMultipleDepositAndGetReward() external {
-        uint256 _aliceBlockToStake = 9;
-        uint256 _aliceAmountToStake = 87 ether;
+    function testMultipleDepositAndGetReward(
+        uint256 _aliceAmountToStake,
+        uint256 _aliceBlockToStake,
+        uint256 _bobAmountToStake,
+        uint256 _bobBlockToStake,
+        uint256 _aliceBlockToGetReward,
+        uint256 _bobBlockToGetReward
+    ) external {
+        _aliceBlockToStake = bound(_aliceBlockToStake, START_REWARD_BLOCK + 1, START_REWARD_BLOCK + 1000);
+        _aliceAmountToStake = bound(_aliceAmountToStake, 1, INITIAL_AMOUNT);
 
-        uint256 _bobBlockToStake = 19;
-        uint256 _bobAmountToStake = 92 ether;
+        _bobBlockToStake = bound(_bobAmountToStake, _aliceBlockToStake + 1, START_REWARD_BLOCK + 2000);
+        _bobAmountToStake = bound(_bobAmountToStake, 1, INITIAL_AMOUNT);
         uint256 _totalAmount = _aliceAmountToStake + _bobAmountToStake;
 
         stake(alice, _aliceAmountToStake, _aliceBlockToStake);
         stake(bob, _bobAmountToStake, _bobBlockToStake);
 
-        uint256 _aliceBlockToGetReward = 23;
-        uint256 _bobBlockToGetReward = 47;
+        _aliceBlockToGetReward = bound(_aliceBlockToGetReward, _bobBlockToStake + 1, START_REWARD_BLOCK + 3000);
+        _bobBlockToGetReward = bound(_bobBlockToGetReward, _aliceBlockToGetReward + 1, START_REWARD_BLOCK + 4000);
 
         uint256 _aliceExpectedReward = (_bobBlockToStake - _aliceBlockToStake) * REWARD_PER_BLOCK + (_aliceBlockToGetReward - _bobBlockToStake) * REWARD_PER_BLOCK * (_aliceAmountToStake) / _totalAmount;
         uint256 _bobExpectedReward = (_bobBlockToGetReward - _bobBlockToStake) * REWARD_PER_BLOCK * (_bobAmountToStake) / _totalAmount;
@@ -197,19 +189,26 @@ contract testStakingUnit is Test {
         assert(abs(int(rewardToken.balanceOf(bob)) - int(_bobExpectedReward)) < ERROR_PRECISION);
     }
 
-    function testMultipleDepositBeforeStartBlockRewardAndGetReward() external {
-        uint256 _aliceBlockToStake = 3;
-        uint256 _aliceAmountToStake = 10 ether;
+    function testMultipleDepositBeforeStartBlockRewardAndGetReward(
+        uint256 _aliceAmountToStake,
+        uint256 _aliceBlockToStake,
+        uint256 _bobAmountToStake,
+        uint256 _bobBlockToStake,
+        uint256 _aliceBlockToGetReward,
+        uint256 _bobBlockToGetReward
+    ) external {
+        _aliceBlockToStake = bound(_aliceBlockToStake, 1, START_REWARD_BLOCK - 2);
+        _aliceAmountToStake = bound(_aliceAmountToStake, 1, INITIAL_AMOUNT);
 
-        uint256 _bobBlockToStake = 4;
-        uint256 _bobAmountToStake = 20 ether;
+        _bobBlockToStake = bound(_bobAmountToStake, _aliceBlockToStake + 1, START_REWARD_BLOCK - 1);
+        _bobAmountToStake = bound(_bobAmountToStake, 1, INITIAL_AMOUNT);
         uint256 _totalAmount = _aliceAmountToStake + _bobAmountToStake;
 
         stake(alice, _aliceAmountToStake, _aliceBlockToStake);
         stake(bob, _bobAmountToStake, _bobBlockToStake);
 
-        uint256 _aliceBlockToGetReward = 23;
-        uint256 _bobBlockToGetReward = 47;
+        _aliceBlockToGetReward = bound(_aliceBlockToGetReward, START_REWARD_BLOCK + 1, START_REWARD_BLOCK + 3000);
+        _bobBlockToGetReward = bound(_bobBlockToGetReward, _aliceBlockToGetReward + 1, START_REWARD_BLOCK + 4000);
 
         uint256 _aliceExpectedReward = REWARD_PER_BLOCK * (_aliceBlockToGetReward - START_REWARD_BLOCK) * _aliceAmountToStake / _totalAmount;
         uint256 _bobExpectedReward = REWARD_PER_BLOCK * (_bobBlockToGetReward - START_REWARD_BLOCK) * _bobAmountToStake / _totalAmount;
@@ -239,14 +238,14 @@ contract testStakingUnit is Test {
         assert(abs(int(rewardToken.balanceOf(bob)) - int(_bobExpectedReward)) < ERROR_PRECISION);
     }
 
-    function testWithdraw() external {
+    function testWithdraw(uint256 _amountToStake, uint256 _amountToUnstake) external {
         uint256 _blockToStake = START_REWARD_BLOCK + 10;
-        uint256 _amountToStake = 50 ether;
+        _amountToStake = bound(_amountToStake, 1, INITIAL_AMOUNT);
 
         stake(alice, _amountToStake, _blockToStake);
 
         uint256 _blockToUnstake = START_REWARD_BLOCK + 150000;
-        uint256 _amountToUnstake = 30 ether;
+         _amountToUnstake = _bound(_amountToUnstake, 1, _amountToStake);
 
         vm.roll(_blockToUnstake);
         
@@ -271,17 +270,17 @@ contract testStakingUnit is Test {
         console.log("Alice's expected reward: ", _aliceExpectedRewards);
         console.log("Alice's reward:  ", staking.stakerEarned(alice));
 
-        assert(staking.stakerEarned(alice) == _aliceExpectedRewards);  
+        assert(isEqual(staking.stakerEarned(alice), _aliceExpectedRewards));  
     }
 
-    function testCantWithDrawWithInsufficentDeposit() external {
+    function testCantWithDrawWithInsufficentDeposit(uint256 _amountToStake, uint256 _amountToUnstake) external {
         uint256 _blockToStake = START_REWARD_BLOCK + 10;
-        uint256 _amountToStake = 50 ether;
+         _amountToStake = bound(_amountToStake, 1, INITIAL_AMOUNT);
 
         stake(alice, _amountToStake, _blockToStake);
 
         uint256 _blockToUnstake = START_REWARD_BLOCK + 150000;
-        uint256 _amountToUnstake = 100 ether;
+         _amountToUnstake = bound(_amountToUnstake, _amountToStake + 1, _amountToStake + 1000);
 
         vm.roll(_blockToUnstake);
         
@@ -292,36 +291,4 @@ contract testStakingUnit is Test {
 
         vm.stopPrank();
     }
-
-    function testCantWithDrawWithZero() external {
-        uint256 _blockToStake = START_REWARD_BLOCK + 10;
-        uint256 _amountToStake = 50 ether;
-
-        stake(alice, _amountToStake, _blockToStake);
-
-        uint256 _blockToUnstake = START_REWARD_BLOCK + 150000;
-        uint256 _amountToUnstake = 0 ether;
-
-        vm.roll(_blockToUnstake);
-        
-        vm.startPrank(alice);
-
-        vm.expectRevert(abi.encodeWithSelector(
-            Staking.WithdrawMustBeGreaterThanZero.selector,
-            alice
-        ));
-        staking.withdraw(_amountToUnstake);
-
-        vm.stopPrank();
-    }
-
-    function testGetReward() external {
-
-    }
-
-    function testChangeOwnershipToken() external {
-
-    }
-
-    
 }
