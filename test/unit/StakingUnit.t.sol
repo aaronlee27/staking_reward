@@ -315,12 +315,40 @@ contract testStakingUnit is Test {
         vm.stopPrank();
     }
 
-    function testGetReward() external {
-
+    function testIsPaused() public view {
+        assert(staking.isPaused() == false);
     }
 
-    function testChangeOwnershipToken() external {
+    function testGetStakingToken() public view {
+        assert(address(staking.getStakingToken()) == address(stakingToken));
+    }
 
+    function testGetRewardToken() public view {
+        assert(address(staking.getRewardToken()) == address(rewardToken));
+    }
+
+    function testGetTotalStaked() public view {
+        assert(staking.getTotalStaked() == 0);
+    }
+
+    function testGetRewardPerBlock() public view {
+        assert(staking.getRewardPerBlock() == REWARD_PER_BLOCK);
+    }
+
+    function testGetStartRewardBlock() public view {
+        assert(staking.getStartRewardBlock() == START_REWARD_BLOCK);
+    }
+
+    function testGetStakerAmountStaked(address _staker) public view {
+        assert(staking.getStakerAmountStaked(_staker) == 0);
+    }
+
+    function testGetAccumulatedRewardsPerShare() public view {
+        assert(staking.getAccumulatedRewardsPerShare() == 0);
+    }
+
+    function getLastRewardedBlock() public view {
+        assert(staking.getLastRewardedBlock() == 0);
     }
 
     
